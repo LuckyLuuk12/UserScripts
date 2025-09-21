@@ -1,16 +1,25 @@
 // ==UserScript==
 // @name         Modrinth Wide Layout
 // @author       Luuk Kablan
-// @namespace    https://github.com/LuckyLuuk12/BrowserUserScripts
+// @namespace    https://github.com/LuckyLuuk12/UserScripts
+// @updateURL    https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/modrinth.user.js
+// @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/modrinth.user.js
+// @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/modrinth.user.js
+// @homepageURL  https://github.com/LuckyLuuk12/UserScripts
 // @version      1.0.0
 // @description  Fix various styling issues on the Modrinth website, e.g. unset margin to use more space
 // @match        https://modrinth.com/*
 // @run-at       document-start
 // @grant        GM_addStyle
+// @license      MIT
+// @copyright    2025, Luuk Kablan
 // ==/UserScript==
 
 (function() {
     'use strict';
+
+    // Licensed under the MIT License (see LICENSE in repository root).
+    // Original author: Luuk Kablan
 
     // 1. Override layout restrictions + style fixes
     GM_addStyle(`
