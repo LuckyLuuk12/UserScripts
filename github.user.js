@@ -5,7 +5,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/github.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/github.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      1.0.0
+// @version      1.0.1
 // @description  Merge top-right GitHub navbar items with bottom navbar on scroll
 // @author       LuckyLuuk12
 // @match        https://github.com/*
