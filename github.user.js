@@ -481,7 +481,7 @@
             // make it fixed and position at the configured TOP_FIXED_PX
             el.style.position = 'fixed';
             el.style.top = TOP_FIXED_PX + 'px';
-            el.style.left = '0';
+            el.style.left = 'unset';
             el.style.right = '0';
             el.style.zIndex = '9999';
             el.style.display = 'flex';
