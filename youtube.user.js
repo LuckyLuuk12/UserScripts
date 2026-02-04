@@ -18,16 +18,16 @@
 // ==/UserScript==
 
 (function () {
-  'use strict';
+    'use strict';
 
-  // Licensed under the MIT License (see LICENSE in repository root).
-  // Original author: Luuk Kablan
+    // Licensed under the MIT License (see LICENSE in repository root).
+    // Original author: Luuk Kablan
 
-  // Override YouTube's CSS variables for rich grid layout
-  // Target: 280px video width, 5 videos per row on 1500px container
+    // Override YouTube's CSS variables for rich grid layout
+    // Target: 280px video width, 5 videos per row on 1500px container
 
-  // Apply styles immediately
-  GM_addStyle(`
+    // Apply styles immediately
+    GM_addStyle(`
         /* Override CSS variables on the grid container */
         #contents.ytd-rich-grid-renderer {
             --ytd-rich-grid-item-max-width: 280px !important;
@@ -57,6 +57,11 @@
             grid-template-columns: repeat(auto-fill, 280px) !important;
             gap: 16px !important;
             justify-content: start !important;
+        }
+
+        /* Hide empty rich section containers */
+        ytd-rich-section-renderer {
+            display: none !important;
         }
 
         /* ===== Watch Page Sidebar Modifications ===== */
@@ -122,39 +127,39 @@
         }
     `);
 
-  // Watch for YouTube's SPA navigation and reapply styles
-  let lastUrl = location.href;
+    // Watch for YouTube's SPA navigation and reapply styles
+    let lastUrl = location.href;
 
-  function checkUrlChange() {
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
-      // Force style recalculation on navigation
-      setTimeout(() => {
-        const sidebarElements = document.querySelectorAll('.yt-lockup-view-model__content-image');
-        sidebarElements.forEach(el => {
-          el.style.maxWidth = '200px';
-          el.style.flex = 'none';
-        });
-      }, 100);
+    function checkUrlChange() {
+        if (location.href !== lastUrl) {
+            lastUrl = location.href;
+            // Force style recalculation on navigation
+            setTimeout(() => {
+                const sidebarElements = document.querySelectorAll('.yt-lockup-view-model__content-image');
+                sidebarElements.forEach(el => {
+                    el.style.maxWidth = '200px';
+                    el.style.flex = 'none';
+                });
+            }, 100);
+        }
     }
-  }
 
-  // Monitor for URL changes (YouTube SPA navigation)
-  const observer = new MutationObserver(checkUrlChange);
-  observer.observe(document.body || document.documentElement, {
-    childList: true,
-    subtree: true
-  });
+    // Monitor for URL changes (YouTube SPA navigation)
+    const observer = new MutationObserver(checkUrlChange);
+    observer.observe(document.body || document.documentElement, {
+        childList: true,
+        subtree: true
+    });
 
-  // Also check on popstate (back/forward navigation)
-  window.addEventListener('popstate', checkUrlChange);
+    // Also check on popstate (back/forward navigation)
+    window.addEventListener('popstate', checkUrlChange);
 
-  // Initial check after page loads
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', checkUrlChange);
-  } else {
-    checkUrlChange();
-  }
+    // Initial check after page loads
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', checkUrlChange);
+    } else {
+        checkUrlChange();
+    }
 
 })();
 
