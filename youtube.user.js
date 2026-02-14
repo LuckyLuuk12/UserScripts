@@ -65,7 +65,7 @@
         }
 
         /* ===== Watch Page Sidebar Modifications ===== */
-        
+
         /* Make the sidebar container sticky and scrollable */
         ytd-watch-next-secondary-results-renderer {
             position: sticky !important;
@@ -125,7 +125,80 @@
             margin-top: 0 !important;
             margin-bottom: 8px !important;
         }
+
+        /* Hide recommendation feedback survey */
+        lockup-attachments-view-model,
+        yt-slimline-survey-view-model {
+            display: none !important;
+        }
+
+        /* Hide members-only videos (applied via JavaScript) */
+        ytd-rich-item-renderer[data-members-only="true"] {
+            display: none !important;
+        }
     `);
+
+    // Function to hide members-only videos
+    function hideMembersOnlyVideos() {
+        const videoCards = document.querySelectorAll('ytd-rich-item-renderer');
+        let hiddenCount = 0;
+        const hiddenVideos = [];
+
+        videoCards.forEach(card => {
+            // Check if this card has already been processed
+            if (card.hasAttribute('data-members-only')) {
+                return;
+            }
+
+            // Look for "Members only" badge text
+            const badges = card.querySelectorAll('.yt-badge-shape__text');
+            let isMembersOnly = false;
+
+            badges.forEach(badge => {
+                if (badge.textContent.trim() === 'Members only') {
+                    isMembersOnly = true;
+                }
+            });
+
+            // Mark the card so we don't process it again
+            card.setAttribute('data-members-only', isMembersOnly ? 'true' : 'false');
+
+            // Log details if it's a members-only video
+            if (isMembersOnly) {
+                hiddenCount++;
+
+                // Extract title and URL
+                const titleElement = card.querySelector('.yt-lockup-metadata-view-model__title, h3 a');
+                const title = titleElement ? titleElement.textContent.trim() : 'Unknown Title';
+                const url = titleElement ? 'https://www.youtube.com' + titleElement.getAttribute('href') : 'Unknown URL';
+
+                hiddenVideos.push({ title, url });
+            }
+        });
+
+        // Log summary if any videos were hidden
+        if (hiddenCount > 0) {
+            console.log(`[YouTube UserScript] Hidden ${hiddenCount} members-only video(s):`);
+            hiddenVideos.forEach((video, index) => {
+                console.log(`  ${index + 1}. "${video.title}" - ${video.url}`);
+            });
+        }
+    }
+
+    // Function to hide feedback popups
+    function hideFeedbackPopups() {
+        const popups = document.querySelectorAll('lockup-attachments-view-model:not([data-feedback-hidden]), yt-slimline-survey-view-model:not([data-feedback-hidden])');
+        let hiddenCount = 0;
+
+        popups.forEach(popup => {
+            popup.setAttribute('data-feedback-hidden', 'true');
+            hiddenCount++;
+        });
+
+        if (hiddenCount > 0) {
+            console.log(`[YouTube UserScript] Hidden ${hiddenCount} feedback popup(s)`);
+        }
+    }
 
     // Watch for YouTube's SPA navigation and reapply styles
     let lastUrl = location.href;
@@ -140,12 +213,21 @@
                     el.style.maxWidth = '200px';
                     el.style.flex = 'none';
                 });
+
+                // Hide members-only videos after navigation
+                hideMembersOnlyVideos();
+                // Hide feedback popups after navigation
+                hideFeedbackPopups();
             }, 100);
         }
     }
 
-    // Monitor for URL changes (YouTube SPA navigation)
-    const observer = new MutationObserver(checkUrlChange);
+    // Monitor for URL changes and new content (YouTube SPA navigation)
+    const observer = new MutationObserver(() => {
+        checkUrlChange();
+        hideMembersOnlyVideos();
+        hideFeedbackPopups();
+    });
     observer.observe(document.body || document.documentElement, {
         childList: true,
         subtree: true
@@ -156,9 +238,15 @@
 
     // Initial check after page loads
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', checkUrlChange);
+        document.addEventListener('DOMContentLoaded', () => {
+            checkUrlChange();
+            hideMembersOnlyVideos();
+            hideFeedbackPopups();
+        });
     } else {
         checkUrlChange();
+        hideMembersOnlyVideos();
+        hideFeedbackPopups();
     }
 
 })();
