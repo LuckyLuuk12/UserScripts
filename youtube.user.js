@@ -150,15 +150,37 @@
                 return;
             }
 
-            // Look for "Members only" badge text
-            const badges = card.querySelectorAll('.yt-badge-shape__text');
             let isMembersOnly = false;
 
+            // Method 1: Look for "Members only" badge text (legacy selector)
+            const badges = card.querySelectorAll('.yt-badge-shape__text');
             badges.forEach(badge => {
                 if (badge.textContent.trim() === 'Members only') {
                     isMembersOnly = true;
                 }
             });
+
+            // Method 2: Look for commerce badge-shape (more specific and reliable)
+            if (!isMembersOnly) {
+                const commerceBadges = card.querySelectorAll('badge-shape.yt-badge-shape--commerce');
+                commerceBadges.forEach(badge => {
+                    const text = badge.textContent.trim();
+                    if (text.includes('Members only')) {
+                        isMembersOnly = true;
+                    }
+                });
+            }
+
+            // Method 3: Look within yt-badge-view-model elements
+            if (!isMembersOnly) {
+                const badgeModels = card.querySelectorAll('yt-badge-view-model');
+                badgeModels.forEach(badgeModel => {
+                    const text = badgeModel.textContent.trim();
+                    if (text.includes('Members only')) {
+                        isMembersOnly = true;
+                    }
+                });
+            }
 
             // Mark the card so we don't process it again
             card.setAttribute('data-members-only', isMembersOnly ? 'true' : 'false');
