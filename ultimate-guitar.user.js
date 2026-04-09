@@ -6,7 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/ultimate-guitar.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/ultimate-guitar.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      2.2.1
+// @version      2.2.2
 // @description  Optimize Ultimate Guitar layout: remove ads, move chords to left sidebar, expand main content
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @match        https://www.ultimate-guitar.com/tab/*
@@ -133,15 +133,13 @@
       });
     }
 
-    document.documentElement.style.setProperty('--ug-layout-center-column-width', '100vw');
-
-    const tabCode = main.querySelector('code');
-    const tabContent = tabCode?.closest('section, article, div');
-    if (tabContent) {
-      tabContent.style.setProperty('max-height', 'calc(100vh - 240px)', 'important');
-      tabContent.style.setProperty('overflow', 'auto', 'important');
-      tabContent.style.setProperty('padding-right', '8px', 'important');
+    const appShell = document.querySelector('.XSbtP');
+    if (appShell) {
+      appShell.style.setProperty('--ug-layout-center-column-width', '100%', 'important');
+      appShell.style.setProperty('max-width', 'none', 'important');
+      appShell.style.setProperty('width', '100%', 'important');
     }
+    document.documentElement.style.setProperty('--ug-layout-center-column-width', '100%');
   }
 
   function hideSidebar(sidebar) {
@@ -168,10 +166,23 @@
     if (navbar.contains(signUp) || navbar.contains(logIn)) return;
 
     const searchBox = navbar.querySelector('input[type="search"], [role="searchbox"]');
-    const navTarget =
-      searchBox?.closest('div')?.parentElement ||
-      findButtonsByLabel(/^install$/i, navbar)[0]?.closest('div')?.parentElement ||
-      navbar;
+    let navTarget = null;
+
+    if (searchBox) {
+      let cursor = searchBox.closest('div');
+      while (cursor && cursor !== navbar) {
+        const hasTopNavLinks = !!cursor.querySelector('ul[aria-label*="Main" i], [role="list"] a[href]');
+        if (hasTopNavLinks) {
+          navTarget = cursor;
+          break;
+        }
+        cursor = cursor.parentElement;
+      }
+    }
+
+    if (!navTarget) {
+      navTarget = navbar.firstElementChild || navbar;
+    }
 
     const existingParent = signUp.parentElement === logIn.parentElement ? signUp.parentElement : null;
     if (existingParent) {
@@ -179,14 +190,20 @@
       existingParent.style.width = 'auto';
       existingParent.style.gap = '8px';
       existingParent.style.flex = '0 0 auto';
+      existingParent.style.alignItems = 'center';
+      existingParent.style.justifySelf = 'end';
       navTarget.appendChild(existingParent);
       console.log('[UG Script] Moved login buttons to navbar');
       return;
     }
 
     const wrapper = document.createElement('div');
-    wrapper.style.display = 'flex';
+    wrapper.style.display = 'inline-flex';
     wrapper.style.gap = '8px';
+    wrapper.style.width = 'auto';
+    wrapper.style.flex = '0 0 auto';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.justifySelf = 'end';
     wrapper.appendChild(signUp);
     wrapper.appendChild(logIn);
     navTarget.appendChild(wrapper);
@@ -273,6 +290,42 @@
     hideCollapseButtons(chordsSection);
     hideCollapseButtons(chordsSection.parentElement);
     console.log('[UG Script] Moved chords to More Versions sidebar');
+  }
+
+  function findTwoColumnLayoutRoot(rightSidebar) {
+    const main = findMain();
+    if (!main || !rightSidebar) return null;
+
+    const tabCode = main.querySelector('code');
+    if (!tabCode) return null;
+
+    let node = tabCode.closest('section, article, div');
+    while (node && node !== main) {
+      if (node.contains(rightSidebar) && node.contains(tabCode)) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+
+    return null;
+  }
+
+  function collapseMainToSingleColumn(rightSidebar) {
+    const layoutRoot = findTwoColumnLayoutRoot(rightSidebar);
+    if (!layoutRoot) return;
+
+    layoutRoot.style.setProperty('display', 'grid', 'important');
+    layoutRoot.style.setProperty('grid-template-columns', 'minmax(0, 1fr)', 'important');
+    layoutRoot.style.setProperty('column-gap', '0', 'important');
+    layoutRoot.style.setProperty('width', '100%', 'important');
+    layoutRoot.style.setProperty('max-width', 'none', 'important');
+
+    Array.from(layoutRoot.children).forEach(child => {
+      if (child !== rightSidebar) {
+        child.style.setProperty('grid-column', '1 / -1', 'important');
+        child.style.setProperty('max-width', 'none', 'important');
+      }
+    });
   }
 
   function updateChordsFontSize(sizeDelta) {
@@ -433,6 +486,7 @@
       removePlayNextAndPromo(sidebar);
       moveChordsToLeftSidebar();
       hideSidebar(findRightSidebar());
+      collapseMainToSingleColumn(findRightSidebar());
       updateChordsFontSize(getSavedChordsFontSize());
     });
 
@@ -462,6 +516,7 @@
     removePlayNextAndPromo(rightSidebar);
     moveChordsToLeftSidebar();
     hideSidebar(rightSidebar);
+    collapseMainToSingleColumn(rightSidebar);
     attachSidebarObserver(rightSidebar);
 
     updateChordsFontSize(getSavedChordsFontSize());
