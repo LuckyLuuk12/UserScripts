@@ -6,7 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/ultimate-guitar.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/ultimate-guitar.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      2.1.0
+// @version      2.2.0
 // @description  Optimize Ultimate Guitar layout: remove ads, move chords to left sidebar, expand main content
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @match        https://www.ultimate-guitar.com/tab/*
@@ -23,227 +23,389 @@
   // Original author: Luuk Kablan
 
   let hasReorganized = false;
+  const LS_KEY_CHORDS_FONT_SIZE = 'ug-chords-fontsize';
+  const HEADING_HINTS = ['play next', 'chords', 'strumming pattern', 'get effects'];
+  const CHORD_TEXT_RE = /^[A-G](?:#|b)?(?:m|maj|min|sus|add|dim|aug)?\d*(?:\/[A-G](?:#|b)?)?$/;
 
-  // Auto-dismiss paywall popups
+  function normalizeText(value) {
+    return (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function findButtonsByLabel(pattern, root = document) {
+    return Array.from(root.querySelectorAll('button')).filter(btn => {
+      const aria = normalizeText(btn.getAttribute('aria-label'));
+      const text = normalizeText(btn.textContent);
+      return pattern.test(aria) || pattern.test(text);
+    });
+  }
+
+  function findNavbar() {
+    return document.querySelector('[role="banner"], header');
+  }
+
+  function findMain() {
+    return document.querySelector('main');
+  }
+
+  function findMoreVersionsContainer() {
+    const byAria = Array.from(document.querySelectorAll('[aria-label]')).find(el => normalizeText(el.getAttribute('aria-label')) === 'more versions');
+    if (byAria) {
+      return byAria.closest('aside, section, div') || byAria;
+    }
+
+    const heading = Array.from(document.querySelectorAll('h2, h3')).find(h => normalizeText(h.textContent) === 'more versions');
+    return heading ? (heading.closest('aside, section, div') || heading.parentElement) : null;
+  }
+
+  function scoreSidebarCandidate(node) {
+    if (!node || node.querySelector('h1')) return -1;
+
+    const headingSet = new Set(
+      Array.from(node.querySelectorAll('h2, h3')).map(h => normalizeText(h.textContent))
+    );
+
+    let score = 0;
+    HEADING_HINTS.forEach(hint => {
+      if (headingSet.has(hint)) score += 1;
+    });
+
+    return score;
+  }
+
+  function findRightSidebar() {
+    const main = findMain();
+    if (!main) return null;
+
+    let best = null;
+    let bestScore = 0;
+    let bestSize = Number.POSITIVE_INFINITY;
+
+    const candidates = Array.from(main.querySelectorAll('aside, section, div'));
+    for (const candidate of candidates) {
+      const score = scoreSidebarCandidate(candidate);
+      if (score < 2) continue;
+
+      const size = candidate.querySelectorAll('*').length;
+      if (score > bestScore || (score === bestScore && size < bestSize)) {
+        best = candidate;
+        bestScore = score;
+        bestSize = size;
+      }
+    }
+
+    return best;
+  }
+
+  function findChordsSection(root) {
+    const scope = root || document;
+    const heading = Array.from(scope.querySelectorAll('h2, h3')).find(h => normalizeText(h.textContent) === 'chords');
+    if (!heading) return null;
+
+    let node = heading.parentElement;
+    while (node && node !== scope) {
+      if (node.querySelector('[role="tablist"], [role="tabpanel"]')) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+
+    return heading.closest('section, article, div') || heading.parentElement;
+  }
+
+  function applyMainLayoutOverrides() {
+    const main = findMain();
+    if (!main) return;
+
+    main.style.width = '100%';
+    main.style.maxWidth = 'none';
+    main.style.marginLeft = '0';
+    main.style.marginRight = '0';
+    main.style.boxSizing = 'border-box';
+
+    const topContainer = main.firstElementChild;
+    if (topContainer) {
+      topContainer.style.width = '100%';
+      topContainer.style.maxWidth = 'none';
+      topContainer.style.margin = '0';
+      topContainer.style.boxSizing = 'border-box';
+
+      Array.from(topContainer.children).forEach(child => {
+        child.style.maxWidth = 'none';
+        child.style.boxSizing = 'border-box';
+      });
+    }
+
+    document.documentElement.style.setProperty('--ug-layout-center-column-width', '100vw');
+  }
+
+  function hideSidebar(sidebar) {
+    if (!sidebar) return;
+    sidebar.style.display = 'none';
+  }
+
+  function hideCollapseButtons(root) {
+    if (!root) return;
+
+    const buttons = findButtonsByLabel(/collapse|expand/i, root);
+    buttons.forEach(btn => {
+      btn.style.display = 'none';
+    });
+  }
+
+  function moveLoginButtonsToNavbar() {
+    const navbar = findNavbar();
+    if (!navbar) return;
+
+    const signUp = findButtonsByLabel(/^sign up$/i)[0];
+    const logIn = findButtonsByLabel(/^log in$/i)[0];
+    if (!signUp || !logIn) return;
+    if (navbar.contains(signUp) || navbar.contains(logIn)) return;
+
+    const existingParent = signUp.parentElement === logIn.parentElement ? signUp.parentElement : null;
+    if (existingParent) {
+      navbar.appendChild(existingParent);
+      console.log('[UG Script] Moved login buttons to navbar');
+      return;
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.style.display = 'flex';
+    wrapper.style.gap = '8px';
+    wrapper.appendChild(signUp);
+    wrapper.appendChild(logIn);
+    navbar.appendChild(wrapper);
+    console.log('[UG Script] Moved login buttons to navbar');
+  }
+
+  function removeAds() {
+    const selectors = [
+      '[id^="ad_"]',
+      '[id^="google_ads"]',
+      'bidding-wrapper',
+      'bidding-unit',
+      'iframe[src*="doubleclick"]',
+      'iframe[src*="googlesyndication"]',
+      '.adsbygoogle'
+    ];
+
+    document.querySelectorAll(selectors.join(',')).forEach(node => {
+      node.remove();
+    });
+  }
+
+  function getChordsTargetSection() {
+    const leftContainer = findMoreVersionsContainer();
+    if (!leftContainer) return null;
+
+    const rightSidebar = findRightSidebar();
+    const chordsSection = findChordsSection(rightSidebar || document);
+    if (!chordsSection) return null;
+
+    return { leftContainer, rightSidebar, chordsSection };
+  }
+
+  function moveChordsToLeftSidebar() {
+    const layout = getChordsTargetSection();
+    if (!layout) return;
+
+    const { leftContainer, chordsSection } = layout;
+    if (leftContainer.contains(chordsSection)) return;
+
+    leftContainer.insertBefore(chordsSection, leftContainer.firstChild);
+    hideCollapseButtons(chordsSection);
+    hideCollapseButtons(chordsSection.parentElement);
+    console.log('[UG Script] Moved chords to More Versions sidebar');
+  }
+
+  function updateChordsFontSize(sizeDelta) {
+    const leftContainer = findMoreVersionsContainer() || document;
+    const chordsSection = findChordsSection(leftContainer);
+    if (!chordsSection) return;
+
+    const textNodes = Array.from(chordsSection.querySelectorAll('span, a, button, div')).filter(el => {
+      if (el.children.length > 0) return false;
+      const text = (el.textContent || '').trim();
+      if (text.length === 0 || text.length > 10) return false;
+      return CHORD_TEXT_RE.test(text);
+    });
+
+    textNodes.forEach(el => {
+      el.style.fontSize = sizeDelta === 0 ? '' : `calc(1em + ${sizeDelta * 0.15}em)`;
+    });
+  }
+
+  function getSavedChordsFontSize() {
+    return parseInt(localStorage.getItem(LS_KEY_CHORDS_FONT_SIZE) || '0', 10);
+  }
+
+  function setSavedChordsFontSize(value) {
+    localStorage.setItem(LS_KEY_CHORDS_FONT_SIZE, String(value));
+    updateChordsFontSize(value);
+  }
+
+  function patchSettingsPopup(dialog) {
+    if (!dialog || dialog.__ugChordsFontSizePatched) return;
+    if (normalizeText(dialog.getAttribute('role')) !== 'dialog') return;
+    if (!/font size/i.test(dialog.textContent || '')) return;
+    if (dialog.querySelector('.ug-chords-fontsize-setting')) return;
+
+    const anchors = Array.from(dialog.querySelectorAll('div, section, article'));
+    const fontSizeAnchor = anchors.find(el => /font size/i.test(normalizeText(el.textContent)) && el.querySelector('button, [role="spinbutton"]'));
+    if (!fontSizeAnchor || !fontSizeAnchor.parentElement) return;
+
+    const controlRow = document.createElement('div');
+    controlRow.className = 'ug-chords-fontsize-setting';
+    controlRow.style.display = 'flex';
+    controlRow.style.alignItems = 'center';
+    controlRow.style.gap = '8px';
+    controlRow.style.marginTop = '8px';
+
+    const label = document.createElement('div');
+    label.textContent = 'Chords font size';
+    label.style.fontWeight = '600';
+
+    const minusBtn = document.createElement('button');
+    minusBtn.type = 'button';
+    minusBtn.setAttribute('aria-label', 'Decrement Chords Font size');
+    minusBtn.textContent = '-';
+
+    const valueNode = document.createElement('div');
+    valueNode.className = 'ug-chords-fontsize-value';
+    valueNode.style.minWidth = '20px';
+    valueNode.style.textAlign = 'center';
+
+    const plusBtn = document.createElement('button');
+    plusBtn.type = 'button';
+    plusBtn.setAttribute('aria-label', 'Increment Chords Font size');
+    plusBtn.textContent = '+';
+
+    const min = -3;
+    const max = 6;
+
+    const updateValue = (newValue) => {
+      valueNode.textContent = String(newValue);
+      setSavedChordsFontSize(newValue);
+    };
+
+    minusBtn.addEventListener('click', () => {
+      const current = getSavedChordsFontSize();
+      if (current > min) updateValue(current - 1);
+    });
+
+    plusBtn.addEventListener('click', () => {
+      const current = getSavedChordsFontSize();
+      if (current < max) updateValue(current + 1);
+    });
+
+    controlRow.appendChild(label);
+    controlRow.appendChild(minusBtn);
+    controlRow.appendChild(valueNode);
+    controlRow.appendChild(plusBtn);
+    fontSizeAnchor.parentElement.insertBefore(controlRow, fontSizeAnchor.nextSibling);
+
+    updateValue(getSavedChordsFontSize());
+    dialog.__ugChordsFontSizePatched = true;
+    console.log('[UG Script] Patched settings popup with chords font size control');
+  }
+
+  function observeSettingsPopups() {
+    if (document.body.__ugSettingsObserver) return;
+
+    const observer = new MutationObserver(mutations => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType !== 1) continue;
+
+          if (node.matches?.('[role="dialog"]')) {
+            patchSettingsPopup(node);
+          }
+
+          if (node.querySelectorAll) {
+            node.querySelectorAll('[role="dialog"]').forEach(patchSettingsPopup);
+          }
+        }
+      }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+    document.body.__ugSettingsObserver = observer;
+  }
+
+  function setupSettingsButtonListener() {
+    const settingsBtn = findButtonsByLabel(/^settings$/i)[0] || document.querySelector('button[aria-label="Settings"]');
+    if (!settingsBtn || settingsBtn.__ugSettingsHooked) return;
+
+    settingsBtn.addEventListener('click', () => {
+      setTimeout(() => {
+        document.querySelectorAll('[role="dialog"]').forEach(patchSettingsPopup);
+      }, 100);
+    });
+
+    settingsBtn.__ugSettingsHooked = true;
+  }
+
   function dismissPopups() {
-    // Find and click dismiss buttons on paywall popups
-    const dismissButtons = document.querySelectorAll('.vepn3.H9V4X button[aria-label="Dismiss"]');
+    const dismissButtons = findButtonsByLabel(/^dismiss$/i);
     dismissButtons.forEach(btn => {
-      console.log('[UG Script] Auto-dismissing paywall popup');
+      if (!btn.isConnected) return;
       btn.click();
     });
 
-    // Close header ad banner by clicking X button
-    const headerAdClose = document.querySelector('.V732l button[aria-label="Close"]');
-    if (headerAdClose) {
-      console.log('[UG Script] Closing header ad banner');
-      headerAdClose.click();
+    const closeButtons = findButtonsByLabel(/^close$/i);
+    closeButtons.forEach(btn => {
+      const areaText = normalizeText(btn.closest('div, section, article')?.textContent);
+      if (/sale|offer|pro access|ad|promotion/.test(areaText)) {
+        btn.click();
+      }
+    });
+
+    const privacyDialog = Array.from(document.querySelectorAll('[role="dialog"]')).find(dialog => {
+      return /privacy/i.test(dialog.textContent || '');
+    });
+    if (privacyDialog) {
+      const disagree = findButtonsByLabel(/^disagree$/i, privacyDialog)[0];
+      if (disagree) disagree.click();
     }
   }
 
+  function attachSidebarObserver(sidebar) {
+    if (!sidebar || sidebar.__ugChordsObserver) return;
 
-  function moveChordsToLeftSidebar() {
-    const leftSidebar = document.querySelector('.KEpBR');
-    const rightSidebarLocal = document.querySelector('.suFdL');
-    if (!leftSidebar || !rightSidebarLocal) return;
+    const observer = new MutationObserver(() => {
+      moveChordsToLeftSidebar();
+      hideSidebar(findRightSidebar());
+      updateChordsFontSize(getSavedChordsFontSize());
+    });
 
-    // Find chords container - look for the section with heading containing "Chords"
-    let chordsSection = null;
-    const rightSidebarSections = rightSidebarLocal.querySelectorAll('section, [class*="Sidebar"], div[class*="vDVhe"] > div');
-    for (const section of rightSidebarSections) {
-      const headingText = section.textContent || '';
-      if (headingText.includes('Chords') || section.querySelector('svg[class*="chord"]') || section.querySelector('[class*="chord"]')) {
-        chordsSection = section;
-        break;
-      }
-    }
-    if (!chordsSection) {
-      chordsSection = rightSidebarLocal.querySelector('[data-name="chords"], .js-store, [class*="ChordDiagram"]')?.closest('section, div[class]');
-    }
-    if (chordsSection && !leftSidebar.contains(chordsSection)) {
-      leftSidebar.insertBefore(chordsSection, leftSidebar.firstChild);
-      // After moving, hide or remove the collapse/expand button inside chordsSection or its parent
-      const collapseBtn = chordsSection.querySelector('button[aria-label*="ollapse"], button[aria-label*="Expand"], [class*="collapse"], [class*="expand"], [data-testid*="collapse"], [data-testid*="expand"]');
-      if (collapseBtn) {
-        // Option 1: Hide it
-        collapseBtn.style.display = 'none';
-        // Option 2: Remove it (uncomment if you prefer removal)
-        // collapseBtn.remove();
-        console.log('[UG Script] Hid collapse/expand button in chords section');
-      }
-      // Also check parent in case the button is outside
-      const parentCollapseBtn = chordsSection.parentElement?.querySelector('button[aria-label*="ollapse"], button[aria-label*="Expand"], [class*="collapse"], [class*="expand"], [data-testid*="collapse"], [data-testid*="expand"]');
-      if (parentCollapseBtn) {
-        parentCollapseBtn.style.display = 'none';
-        // parentCollapseBtn.remove();
-        console.log('[UG Script] Hid collapse/expand button in chords parent');
-      }
-      console.log('[UG Script] Moved chords to left sidebar');
-    }
+    observer.observe(sidebar, { childList: true, subtree: true });
+    sidebar.__ugChordsObserver = observer;
   }
 
   function reorganizeLayout() {
     if (hasReorganized) return;
 
-
-    // Wait for page to be ready
-    const leftSidebar = document.querySelector('.KEpBR');
-    const rightSidebar = document.querySelector('.suFdL');
-    const navbar = document.querySelector('.M71za.IfVEB.IlvQM.bYTHw.yjpiY.ASYcf');
-    const mainContainer = document.querySelector('.UNiKi');
-
-    if (!leftSidebar || !rightSidebar || !navbar || !mainContainer) {
-      setTimeout(reorganizeLayout, 100);
+    const main = findMain();
+    const navbar = findNavbar();
+    if (!main || !navbar) {
+      setTimeout(reorganizeLayout, 150);
       return;
     }
-
-    if (!leftSidebar || !rightSidebar || !navbar || !mainContainer) {
-      setTimeout(reorganizeLayout, 100);
-      return;
-    }
-    mainContainer.style.width = '100vw';
-    mainContainer.style.boxSizing = 'border-box';
-    // Remove any left/right auto margin
-    if (mainContainer.style.marginLeft === 'auto' || mainContainer.style.marginRight === 'auto') {
-      mainContainer.style.marginLeft = '0';
-      mainContainer.style.marginRight = '0';
-    }
-    // Expand all direct grid children to fill available space and remove centering/width limits
-    Array.from(mainContainer.children).forEach(child => {
-      child.style.maxWidth = 'none';
-      child.style.width = 'auto';
-      child.style.margin = '0';
-      child.style.boxSizing = 'border-box';
-    });
-
-    // Override the --ug-layout-center-column-width variable to prevent hardcoded max width
-    mainContainer.style.setProperty('--ug-layout-center-column-width', '99.9vw');
 
     hasReorganized = true;
     console.log('[UG Script] Starting layout reorganization');
 
-    // 1. Remove advertisement header (top banner)
-    const adHeaders = document.querySelectorAll('[id^="ad_cs_"], bidding-wrapper, bidding-unit, .YJlyc, .vSVYa');
-    adHeaders.forEach(ad => {
-      console.log('[UG Script] Removing ad element:', ad.className || ad.id);
-      ad.remove();
-    });
-
-    // 2. Move sign up & log in buttons to navbar
-    const loginButtons = document.querySelector('.kb_IV');
-    if (loginButtons && !navbar.querySelector('.kb_IV')) {
-      console.log('[UG Script] Moving login buttons to navbar');
-      navbar.appendChild(loginButtons);
-    }
-
-    // 3. Move chords section robustly using observer
+    removeAds();
+    dismissPopups();
+    moveLoginButtonsToNavbar();
+    applyMainLayoutOverrides();
     moveChordsToLeftSidebar();
-    // Observe right sidebar for chords re-insertion
-    const rightSidebarObs = document.querySelector('.suFdL');
-    if (rightSidebarObs && !rightSidebarObs.__ugChordsObserver) {
-      const observer = new MutationObserver(() => {
-        moveChordsToLeftSidebar();
-      });
-      observer.observe(rightSidebarObs, { childList: true, subtree: true });
-      rightSidebarObs.__ugChordsObserver = observer;
-    }
 
-    // 4. Hide the right sidebar to make main content use full width
-    console.log('[UG Script] Hiding right sidebar');
-    rightSidebar.style.display = 'none';
+    const rightSidebar = findRightSidebar();
+    hideSidebar(rightSidebar);
+    attachSidebarObserver(rightSidebar);
 
-    // --- Chords font size controls in settings popup ---
-    function patchSettingsPopup(settingsPopup) {
-      if (!settingsPopup || settingsPopup.__ugChordsFontSizePatched) return;
-      if (settingsPopup.querySelector('.ug-chords-fontsize-setting')) return;
-      // Find the font size control to clone its style
-      const fontSizeControl = Array.from(settingsPopup.querySelectorAll('div')).find(div => div.textContent && div.textContent.includes('Font size'));
-      if (!fontSizeControl) return;
-      // Create new control for chords font size
-      const chordsFontDiv = document.createElement('div');
-      chordsFontDiv.className = fontSizeControl.className + ' ug-chords-fontsize-setting';
-      chordsFontDiv.style.marginTop = '8px';
-      chordsFontDiv.innerHTML = `
-        <div class="Q_TBK u4jSw aPN9d ru_9u cTzGe fiB3E p62dr iLhw7">Chords font size</div>
-        <button type="button" tabindex="0" aria-label="Decrement Chords Font size" class="vs3kE vDzLP jcUeD Kb0iM cPCOm t8T86 ug-chords-fontsize-minus"><svg aria-hidden="true" viewBox="0 0 20 20" class="qkTwy"><path fill-rule="evenodd" d="M2 9h16v2H2z" clip-rule="evenodd"></path></svg></button>
-        <div aria-hidden="true" class="Q_TBK PHusz aPN9d ru_9u cTzGe fiB3E p62dr d6UjI ug-chords-fontsize-value">0</div>
-        <button type="button" tabindex="0" aria-label="Increment Chords Font size" class="vs3kE vDzLP jcUeD Kb0iM cPCOm t8T86 ug-chords-fontsize-plus"><svg aria-hidden="true" viewBox="0 0 20 20" class="qkTwy"><path d="M9 11v7h2v-7h7V9h-7V2H9v7H2v2z"></path></svg></button>
-      `;
-      fontSizeControl.parentElement.insertBefore(chordsFontDiv, fontSizeControl.nextSibling);
-      // State management
-      const LS_KEY = 'ug-chords-fontsize';
-      const min = -3, max = 6, step = 1;
-      function getFontSize() {
-        return parseInt(localStorage.getItem(LS_KEY) || '0', 10);
-      }
-      function setFontSize(val) {
-        localStorage.setItem(LS_KEY, val);
-        updateFontSize(val);
-      }
-      function updateFontSize(val) {
-        chordsFontDiv.querySelector('.ug-chords-fontsize-value').textContent = val;
-        // Find chords container in left sidebar
-        const leftSidebar = document.querySelector('.KEpBR');
-        if (leftSidebar) {
-          const chordsSection = Array.from(leftSidebar.querySelectorAll('section, [class*="Sidebar"], div[class*="vDVhe"] > div')).find(section => {
-            const headingText = section.textContent || '';
-            return headingText.includes('Chords') || section.querySelector('svg[class*="chord"]') || section.querySelector('[class*="chord"]');
-          });
-          if (chordsSection) {
-            // Find all chord name spans (usually with class containing 'chord' or 'ChordDiagram')
-            const chordSpans = chordsSection.querySelectorAll('span[class*="chord"], span[class*="ChordDiagram"], span[data-name*="chord"], span');
-            chordSpans.forEach(span => {
-              // Only increase font size for spans that look like chord names (not for all spans)
-              if (/^[A-G][#bmaddsusdim0-9\/]*$/.test(span.textContent.trim())) {
-                span.style.fontSize = val === 0 ? '' : `calc(1em + ${val * 0.15}em)`;
-              }
-            });
-          }
-        }
-      }
-      // Button handlers
-      chordsFontDiv.querySelector('.ug-chords-fontsize-minus').onclick = () => {
-        let val = getFontSize();
-        if (val > min) setFontSize(val - step);
-      };
-      chordsFontDiv.querySelector('.ug-chords-fontsize-plus').onclick = () => {
-        let val = getFontSize();
-        if (val < max) setFontSize(val + step);
-      };
-      // Initial value
-      updateFontSize(getFontSize());
-      settingsPopup.__ugChordsFontSizePatched = true;
-    }
-
-    // Observe for settings popup being added
-    let settingsPopupObserver = null;
-    function observeSettingsPopup() {
-      if (settingsPopupObserver) return;
-      settingsPopupObserver = new MutationObserver(mutations => {
-        for (const m of mutations) {
-          for (const node of m.addedNodes) {
-            if (node.nodeType === 1 && node.matches && node.matches('section[role="dialog"].BqVDk')) {
-              patchSettingsPopup(node);
-            }
-          }
-        }
-      });
-      settingsPopupObserver.observe(document.body, { childList: true, subtree: true });
-    }
-    observeSettingsPopup();
-
-    // Listen for clicks on the settings button to trigger observer and patch if already present
-    function setupSettingsButtonListener() {
-      const settingsBtn = document.querySelector('button[aria-label="Settings"]');
-      if (!settingsBtn || settingsBtn.__ugChordsFontSizeListener) return;
-      settingsBtn.addEventListener('click', () => {
-        setTimeout(() => {
-          const popup = document.querySelector('section[role="dialog"].BqVDk');
-          if (popup) patchSettingsPopup(popup);
-        }, 100);
-      });
-      settingsBtn.__ugChordsFontSizeListener = true;
-    }
+    updateChordsFontSize(getSavedChordsFontSize());
+    observeSettingsPopups();
     setupSettingsButtonListener();
 
     console.log('[UG Script] Layout reorganization complete');
@@ -268,8 +430,5 @@
       hasReorganized = false;
       setTimeout(reorganizeLayout, 500);
     }
-  }).observe(document.querySelector('head > title'), {
-    childList: true,
-    subtree: true
-  });
+  }).observe(document.documentElement, { childList: true, subtree: true });
 })();
