@@ -6,7 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/ultimate-guitar.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/ultimate-guitar.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      2.2.3
+// @version      2.2.4
 // @description  Optimize Ultimate Guitar layout: remove ads, move chords to left sidebar, expand main content
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @match        https://www.ultimate-guitar.com/tab/*
@@ -237,13 +237,62 @@
     return { leftContainer, rightSidebar, chordsSection };
   }
 
+  function findContentScrollWrapper(leftContainer) {
+    const main = findMain();
+    if (!main || !leftContainer) return null;
+
+    const navbar = findNavbar();
+    let fallback = null;
+    let node = main.parentElement;
+
+    while (node && node !== document.body) {
+      if (node.contains(leftContainer)) {
+        if (!fallback) fallback = node;
+
+        // Prefer a wrapper that contains both content sections but not the top navbar.
+        if (!navbar || !node.contains(navbar)) {
+          return node;
+        }
+      }
+      node = node.parentElement;
+    }
+
+    return fallback;
+  }
+
+  function setupContentScrollContainer(leftContainer) {
+    const wrapper = findContentScrollWrapper(leftContainer);
+    if (!wrapper) return null;
+
+    const wrapperTop = Math.max(0, Math.floor(wrapper.getBoundingClientRect().top));
+    const viewportHeight = Math.max(320, window.innerHeight - wrapperTop);
+
+    wrapper.style.setProperty('height', `${viewportHeight}px`, 'important');
+    wrapper.style.setProperty('max-height', `${viewportHeight}px`, 'important');
+    wrapper.style.setProperty('overflow-y', 'auto', 'important');
+    wrapper.style.setProperty('overflow-x', 'hidden', 'important');
+    wrapper.style.setProperty('overscroll-behavior', 'contain', 'important');
+
+    // Keep the document from fighting the custom wrapper scroll behavior.
+    document.documentElement.style.setProperty('overflow', 'hidden', 'important');
+    document.body.style.setProperty('overflow', 'hidden', 'important');
+
+    return { wrapper, wrapperTop };
+  }
+
   function makeLeftSidebarSticky(leftContainer) {
     if (!leftContainer) return;
 
+    const scrollSetup = setupContentScrollContainer(leftContainer);
+    const stickyTop = scrollSetup ? 8 : 76;
+    const maxHeight = scrollSetup
+      ? Math.max(240, Math.floor(scrollSetup.wrapper.getBoundingClientRect().height - 16))
+      : null;
+
     leftContainer.style.setProperty('position', 'sticky', 'important');
-    leftContainer.style.setProperty('top', '76px', 'important');
+    leftContainer.style.setProperty('top', `${stickyTop}px`, 'important');
     leftContainer.style.setProperty('align-self', 'start', 'important');
-    leftContainer.style.setProperty('max-height', 'calc(100vh - 90px)', 'important');
+    leftContainer.style.setProperty('max-height', maxHeight ? `${maxHeight}px` : 'calc(100vh - 90px)', 'important');
     leftContainer.style.setProperty('overflow-y', 'auto', 'important');
     leftContainer.style.setProperty('overscroll-behavior', 'contain', 'important');
     leftContainer.style.setProperty('padding-right', '6px', 'important');
@@ -496,6 +545,11 @@
     if (!sidebar || sidebar.__ugChordsObserver) return;
 
     const observer = new MutationObserver(() => {
+      const leftContainer = findMoreVersionsContainer();
+      if (leftContainer) {
+        setupContentScrollContainer(leftContainer);
+        makeLeftSidebarSticky(leftContainer);
+      }
       removePlayNextAndPromo(sidebar);
       moveChordsToLeftSidebar();
       hideSidebar(findRightSidebar());
@@ -527,6 +581,7 @@
     applyMainLayoutOverrides();
 
     makeLeftSidebarSticky(leftContainer);
+    setupContentScrollContainer(leftContainer);
     removePlayNextAndPromo(rightSidebar);
     moveChordsToLeftSidebar();
     hideSidebar(rightSidebar);
