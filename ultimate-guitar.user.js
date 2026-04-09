@@ -6,7 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/ultimate-guitar.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/ultimate-guitar.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      2.2.7
+// @version      2.2.8
 // @description  Optimize Ultimate Guitar layout: remove ads, move chords to left sidebar, expand main content
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @match        https://www.ultimate-guitar.com/tab/*
@@ -24,6 +24,7 @@
 
   let hasReorganized = false;
   const LS_KEY_CHORDS_FONT_SIZE = 'ug-chords-fontsize';
+  const LS_KEY_TAB_FONT_FAMILY = 'ug-tab-font-family';
   const CHORD_TEXT_RE = /^[A-G](?:#|b)?(?:m|maj|min|sus|add|dim|aug)?\d*(?:\/[A-G](?:#|b)?)?$/;
   const PROMO_TEXT_PATTERNS = [
     /your ai guitar coach/i,
@@ -413,6 +414,41 @@
     });
   }
 
+  function getTabContentRoot() {
+    const main = findMain();
+    if (!main) return null;
+    const codeNode = main.querySelector('code');
+    return codeNode?.closest('section, article, div') || codeNode || null;
+  }
+
+  function getSavedTabFontFamily() {
+    return (localStorage.getItem(LS_KEY_TAB_FONT_FAMILY) || '').trim();
+  }
+
+  function setSavedTabFontFamily(value) {
+    localStorage.setItem(LS_KEY_TAB_FONT_FAMILY, value || '');
+    applyTabFontFamily(value || '');
+  }
+
+  function applyTabFontFamily(fontFamilyValue) {
+    const value = (fontFamilyValue || '').trim();
+    const tabRoot = getTabContentRoot();
+    if (!tabRoot) return;
+
+    if (!value) {
+      tabRoot.style.removeProperty('font-family');
+      const codeNode = tabRoot.querySelector('code');
+      if (codeNode) codeNode.style.removeProperty('font-family');
+      return;
+    }
+
+    tabRoot.style.setProperty('font-family', value, 'important');
+    const codeNode = tabRoot.querySelector('code');
+    if (codeNode) {
+      codeNode.style.setProperty('font-family', value, 'important');
+    }
+  }
+
   function getSavedChordsFontSize() {
     return parseInt(localStorage.getItem(LS_KEY_CHORDS_FONT_SIZE) || '0', 10);
   }
@@ -483,6 +519,60 @@
     fontSizeAnchor.parentElement.insertBefore(controlRow, fontSizeAnchor.nextSibling);
 
     updateValue(getSavedChordsFontSize());
+
+    const fontInputRow = document.createElement('div');
+    fontInputRow.className = 'ug-tab-font-family-setting';
+    fontInputRow.style.display = 'flex';
+    fontInputRow.style.alignItems = 'center';
+    fontInputRow.style.gap = '8px';
+    fontInputRow.style.marginTop = '8px';
+
+    const fontInputLabel = document.createElement('label');
+    fontInputLabel.textContent = 'Tab font family';
+    fontInputLabel.style.fontWeight = '600';
+    fontInputLabel.setAttribute('for', 'ug-tab-font-family-input');
+
+    const fontInput = document.createElement('input');
+    fontInput.type = 'text';
+    fontInput.id = 'ug-tab-font-family-input';
+    fontInput.placeholder = 'e.g. "Courier New", monospace';
+    fontInput.value = getSavedTabFontFamily();
+    fontInput.style.flex = '1 1 auto';
+    fontInput.style.minWidth = '0';
+
+    const applyBtn = document.createElement('button');
+    applyBtn.type = 'button';
+    applyBtn.textContent = 'Apply';
+    applyBtn.setAttribute('aria-label', 'Apply tab font family');
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.textContent = 'Reset';
+    clearBtn.setAttribute('aria-label', 'Reset tab font family');
+
+    applyBtn.addEventListener('click', () => {
+      setSavedTabFontFamily(fontInput.value);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      fontInput.value = '';
+      setSavedTabFontFamily('');
+    });
+
+    fontInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        setSavedTabFontFamily(fontInput.value);
+      }
+    });
+
+    fontInputRow.appendChild(fontInputLabel);
+    fontInputRow.appendChild(fontInput);
+    fontInputRow.appendChild(applyBtn);
+    fontInputRow.appendChild(clearBtn);
+    fontSizeAnchor.parentElement.insertBefore(fontInputRow, controlRow.nextSibling);
+
+    applyTabFontFamily(getSavedTabFontFamily());
     dialog.__ugChordsFontSizePatched = true;
     console.log('[UG Script] Patched settings popup with chords font size control');
   }
@@ -599,6 +689,7 @@
     collapseMainToSingleColumn(rightSidebar);
     attachSidebarObserver(rightSidebar);
 
+    applyTabFontFamily(getSavedTabFontFamily());
     updateChordsFontSize(getSavedChordsFontSize());
     observeSettingsPopups();
     setupSettingsButtonListener();
