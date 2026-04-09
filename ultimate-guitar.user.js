@@ -6,7 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/ultimate-guitar.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/ultimate-guitar.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      2.2.9
+// @version      2.2.10
 // @description  Optimize Ultimate Guitar layout: remove ads, move chords to left sidebar, expand main content
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @match        https://www.ultimate-guitar.com/tab/*
@@ -322,12 +322,6 @@
   function removePlayNextAndPromo(sidebar) {
     if (!sidebar) return;
 
-    const playNextPanel = findPanelByHeading(sidebar, 'Play next');
-    if (playNextPanel) {
-      playNextPanel.remove();
-      console.log('[UG Script] Removed Play next panel');
-    }
-
     const promoCandidates = Array.from(sidebar.querySelectorAll('section, article, div')).filter(node => {
       const text = normalizeText(node.textContent);
       if (!text || text.length > 500) return false;
@@ -341,6 +335,31 @@
         card.remove();
       }
     });
+  }
+
+  function movePlayNextToLeftSidebar() {
+    const layout = getChordsTargetSection();
+    if (!layout) return;
+
+    const { leftContainer, rightSidebar, chordsSection } = layout;
+    const playNextPanel = findPanelByHeading(rightSidebar || document, 'Play next');
+    if (!playNextPanel) return;
+
+    // Ensure Chords stays first, then Play next, then More Versions.
+    if (chordsSection.parentElement === leftContainer) {
+      const nextSibling = chordsSection.nextSibling;
+      if (nextSibling !== playNextPanel) {
+        leftContainer.insertBefore(playNextPanel, nextSibling);
+      }
+    } else {
+      leftContainer.insertBefore(playNextPanel, leftContainer.firstChild);
+    }
+
+    playNextPanel.style.setProperty('width', '100%', 'important');
+    playNextPanel.style.setProperty('max-width', 'none', 'important');
+    playNextPanel.style.setProperty('min-width', '0', 'important');
+    playNextPanel.style.setProperty('box-sizing', 'border-box', 'important');
+    hideCollapseButtons(playNextPanel);
   }
 
   function moveChordsToLeftSidebar() {
@@ -670,8 +689,9 @@
       if (leftContainer) {
         makeLeftSidebarSticky(leftContainer);
       }
-      removePlayNextAndPromo(sidebar);
       moveChordsToLeftSidebar();
+      movePlayNextToLeftSidebar();
+      removePlayNextAndPromo(sidebar);
       hideSidebar(findRightSidebar());
       collapseMainToSingleColumn(findRightSidebar());
       updateChordsFontSize(getSavedChordsFontSize());
@@ -701,8 +721,9 @@
     applyMainLayoutOverrides();
 
     makeLeftSidebarSticky(leftContainer);
-    removePlayNextAndPromo(rightSidebar);
     moveChordsToLeftSidebar();
+    movePlayNextToLeftSidebar();
+    removePlayNextAndPromo(rightSidebar);
     hideSidebar(rightSidebar);
     collapseMainToSingleColumn(rightSidebar);
     attachSidebarObserver(rightSidebar);
