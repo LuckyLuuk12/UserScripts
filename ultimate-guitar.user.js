@@ -6,7 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/ultimate-guitar.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/ultimate-guitar.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      2.2.4
+// @version      2.2.5
 // @description  Optimize Ultimate Guitar layout: remove ads, move chords to left sidebar, expand main content
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @match        https://www.ultimate-guitar.com/tab/*
@@ -264,8 +264,8 @@
     const wrapper = findContentScrollWrapper(leftContainer);
     if (!wrapper) return null;
 
-    const wrapperTop = Math.max(0, Math.floor(wrapper.getBoundingClientRect().top));
-    const viewportHeight = Math.max(320, window.innerHeight - wrapperTop);
+    const headerHeight = Math.max(0, Math.ceil(findNavbar()?.getBoundingClientRect().height || 0));
+    const viewportHeight = Math.max(320, window.innerHeight - headerHeight - 8);
 
     wrapper.style.setProperty('height', `${viewportHeight}px`, 'important');
     wrapper.style.setProperty('max-height', `${viewportHeight}px`, 'important');
@@ -273,18 +273,14 @@
     wrapper.style.setProperty('overflow-x', 'hidden', 'important');
     wrapper.style.setProperty('overscroll-behavior', 'contain', 'important');
 
-    // Keep the document from fighting the custom wrapper scroll behavior.
-    document.documentElement.style.setProperty('overflow', 'hidden', 'important');
-    document.body.style.setProperty('overflow', 'hidden', 'important');
-
-    return { wrapper, wrapperTop };
+    return { wrapper, headerHeight };
   }
 
   function makeLeftSidebarSticky(leftContainer) {
     if (!leftContainer) return;
 
     const scrollSetup = setupContentScrollContainer(leftContainer);
-    const stickyTop = scrollSetup ? 8 : 76;
+    const stickyTop = scrollSetup ? 8 : Math.max(8, Math.ceil(findNavbar()?.getBoundingClientRect().height || 68));
     const maxHeight = scrollSetup
       ? Math.max(240, Math.floor(scrollSetup.wrapper.getBoundingClientRect().height - 16))
       : null;
@@ -292,10 +288,20 @@
     leftContainer.style.setProperty('position', 'sticky', 'important');
     leftContainer.style.setProperty('top', `${stickyTop}px`, 'important');
     leftContainer.style.setProperty('align-self', 'start', 'important');
+    leftContainer.style.setProperty('width', '100%', 'important');
+    leftContainer.style.setProperty('min-width', '0', 'important');
+    leftContainer.style.setProperty('box-sizing', 'border-box', 'important');
     leftContainer.style.setProperty('max-height', maxHeight ? `${maxHeight}px` : 'calc(100vh - 90px)', 'important');
     leftContainer.style.setProperty('overflow-y', 'auto', 'important');
     leftContainer.style.setProperty('overscroll-behavior', 'contain', 'important');
     leftContainer.style.setProperty('padding-right', '6px', 'important');
+
+    Array.from(leftContainer.children).forEach(child => {
+      child.style.setProperty('width', '100%', 'important');
+      child.style.setProperty('max-width', 'none', 'important');
+      child.style.setProperty('min-width', '0', 'important');
+      child.style.setProperty('box-sizing', 'border-box', 'important');
+    });
   }
 
   function findPanelByHeading(sidebar, headingText) {
@@ -349,6 +355,10 @@
     if (leftContainer.contains(chordsSection)) return;
 
     leftContainer.insertBefore(chordsSection, leftContainer.firstChild);
+    chordsSection.style.setProperty('width', '100%', 'important');
+    chordsSection.style.setProperty('max-width', 'none', 'important');
+    chordsSection.style.setProperty('min-width', '0', 'important');
+    chordsSection.style.setProperty('box-sizing', 'border-box', 'important');
     hideCollapseButtons(chordsSection);
     hideCollapseButtons(chordsSection.parentElement);
     console.log('[UG Script] Moved chords to More Versions sidebar');
@@ -518,9 +528,16 @@
   }
 
   function dismissPopups() {
+    const activeSettingsDialog = Array.from(document.querySelectorAll('[role="dialog"]')).find(dialog => {
+      return /font size|settings/i.test(dialog.textContent || '');
+    });
+    if (activeSettingsDialog) return;
+
     const dismissButtons = findButtonsByLabel(/^dismiss$/i);
     dismissButtons.forEach(btn => {
       if (!btn.isConnected) return;
+      const dialog = btn.closest('[role="dialog"]');
+      if (dialog && /font size|settings/i.test(dialog.textContent || '')) return;
       btn.click();
     });
 
