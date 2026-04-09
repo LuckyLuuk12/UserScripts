@@ -6,7 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/ultimate-guitar.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/ultimate-guitar.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      2.2.0
+// @version      2.2.1
 // @description  Optimize Ultimate Guitar layout: remove ads, move chords to left sidebar, expand main content
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @match        https://www.ultimate-guitar.com/tab/*
@@ -24,8 +24,13 @@
 
   let hasReorganized = false;
   const LS_KEY_CHORDS_FONT_SIZE = 'ug-chords-fontsize';
-  const HEADING_HINTS = ['play next', 'chords', 'strumming pattern', 'get effects'];
   const CHORD_TEXT_RE = /^[A-G](?:#|b)?(?:m|maj|min|sus|add|dim|aug)?\d*(?:\/[A-G](?:#|b)?)?$/;
+  const PROMO_TEXT_PATTERNS = [
+    /your ai guitar coach/i,
+    /welcome offer/i,
+    /try now/i,
+    /powered by/i
+  ];
 
   function normalizeText(value) {
     return (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -47,6 +52,17 @@
     return document.querySelector('main');
   }
 
+  function findHeadingByText(text, root = document) {
+    const needle = normalizeText(text);
+    return Array.from(root.querySelectorAll('h1, h2, h3, h4')).find(h => normalizeText(h.textContent) === needle);
+  }
+
+  function headingSet(root) {
+    return new Set(
+      Array.from(root.querySelectorAll('h2, h3')).map(h => normalizeText(h.textContent))
+    );
+  }
+
   function findMoreVersionsContainer() {
     const byAria = Array.from(document.querySelectorAll('[aria-label]')).find(el => normalizeText(el.getAttribute('aria-label')) === 'more versions');
     if (byAria) {
@@ -57,43 +73,25 @@
     return heading ? (heading.closest('aside, section, div') || heading.parentElement) : null;
   }
 
-  function scoreSidebarCandidate(node) {
-    if (!node || node.querySelector('h1')) return -1;
-
-    const headingSet = new Set(
-      Array.from(node.querySelectorAll('h2, h3')).map(h => normalizeText(h.textContent))
-    );
-
-    let score = 0;
-    HEADING_HINTS.forEach(hint => {
-      if (headingSet.has(hint)) score += 1;
-    });
-
-    return score;
-  }
-
   function findRightSidebar() {
     const main = findMain();
-    if (!main) return null;
+    const scope = main || document;
+    const chordsHeading = findHeadingByText('Chords', scope);
+    if (!chordsHeading) return null;
 
-    let best = null;
-    let bestScore = 0;
-    let bestSize = Number.POSITIVE_INFINITY;
-
-    const candidates = Array.from(main.querySelectorAll('aside, section, div'));
-    for (const candidate of candidates) {
-      const score = scoreSidebarCandidate(candidate);
-      if (score < 2) continue;
-
-      const size = candidate.querySelectorAll('*').length;
-      if (score > bestScore || (score === bestScore && size < bestSize)) {
-        best = candidate;
-        bestScore = score;
-        bestSize = size;
+    let node = chordsHeading.closest('section, aside, article, div') || chordsHeading.parentElement;
+    while (node && node !== document.body) {
+      const headings = headingSet(node);
+      if (
+        headings.has('chords') &&
+        (headings.has('play next') || headings.has('strumming pattern') || headings.has('get effects'))
+      ) {
+        return node;
       }
+      node = node.parentElement;
     }
 
-    return best;
+    return null;
   }
 
   function findChordsSection(root) {
@@ -116,26 +114,34 @@
     const main = findMain();
     if (!main) return;
 
-    main.style.width = '100%';
-    main.style.maxWidth = 'none';
-    main.style.marginLeft = '0';
-    main.style.marginRight = '0';
-    main.style.boxSizing = 'border-box';
+    main.style.setProperty('width', '100%', 'important');
+    main.style.setProperty('max-width', 'none', 'important');
+    main.style.setProperty('margin-left', '0', 'important');
+    main.style.setProperty('margin-right', '0', 'important');
+    main.style.setProperty('box-sizing', 'border-box', 'important');
 
     const topContainer = main.firstElementChild;
     if (topContainer) {
-      topContainer.style.width = '100%';
-      topContainer.style.maxWidth = 'none';
-      topContainer.style.margin = '0';
-      topContainer.style.boxSizing = 'border-box';
+      topContainer.style.setProperty('width', '100%', 'important');
+      topContainer.style.setProperty('max-width', 'none', 'important');
+      topContainer.style.setProperty('margin', '0', 'important');
+      topContainer.style.setProperty('box-sizing', 'border-box', 'important');
 
       Array.from(topContainer.children).forEach(child => {
-        child.style.maxWidth = 'none';
-        child.style.boxSizing = 'border-box';
+        child.style.setProperty('max-width', 'none', 'important');
+        child.style.setProperty('box-sizing', 'border-box', 'important');
       });
     }
 
     document.documentElement.style.setProperty('--ug-layout-center-column-width', '100vw');
+
+    const tabCode = main.querySelector('code');
+    const tabContent = tabCode?.closest('section, article, div');
+    if (tabContent) {
+      tabContent.style.setProperty('max-height', 'calc(100vh - 240px)', 'important');
+      tabContent.style.setProperty('overflow', 'auto', 'important');
+      tabContent.style.setProperty('padding-right', '8px', 'important');
+    }
   }
 
   function hideSidebar(sidebar) {
@@ -161,9 +167,19 @@
     if (!signUp || !logIn) return;
     if (navbar.contains(signUp) || navbar.contains(logIn)) return;
 
+    const searchBox = navbar.querySelector('input[type="search"], [role="searchbox"]');
+    const navTarget =
+      searchBox?.closest('div')?.parentElement ||
+      findButtonsByLabel(/^install$/i, navbar)[0]?.closest('div')?.parentElement ||
+      navbar;
+
     const existingParent = signUp.parentElement === logIn.parentElement ? signUp.parentElement : null;
     if (existingParent) {
-      navbar.appendChild(existingParent);
+      existingParent.style.display = 'inline-flex';
+      existingParent.style.width = 'auto';
+      existingParent.style.gap = '8px';
+      existingParent.style.flex = '0 0 auto';
+      navTarget.appendChild(existingParent);
       console.log('[UG Script] Moved login buttons to navbar');
       return;
     }
@@ -173,7 +189,7 @@
     wrapper.style.gap = '8px';
     wrapper.appendChild(signUp);
     wrapper.appendChild(logIn);
-    navbar.appendChild(wrapper);
+    navTarget.appendChild(wrapper);
     console.log('[UG Script] Moved login buttons to navbar');
   }
 
@@ -202,6 +218,48 @@
     if (!chordsSection) return null;
 
     return { leftContainer, rightSidebar, chordsSection };
+  }
+
+  function findPanelByHeading(sidebar, headingText) {
+    if (!sidebar) return null;
+
+    const heading = findHeadingByText(headingText, sidebar);
+    if (!heading) return null;
+
+    let panel = heading.closest('section, article, div') || heading.parentElement;
+    while (panel && panel.parentElement && panel.parentElement !== sidebar) {
+      const parentHeadings = headingSet(panel.parentElement);
+      if (parentHeadings.has('chords') || parentHeadings.has('strumming pattern') || parentHeadings.has('get effects')) {
+        break;
+      }
+      panel = panel.parentElement;
+    }
+
+    return panel;
+  }
+
+  function removePlayNextAndPromo(sidebar) {
+    if (!sidebar) return;
+
+    const playNextPanel = findPanelByHeading(sidebar, 'Play next');
+    if (playNextPanel) {
+      playNextPanel.remove();
+      console.log('[UG Script] Removed Play next panel');
+    }
+
+    const promoCandidates = Array.from(sidebar.querySelectorAll('section, article, div')).filter(node => {
+      const text = normalizeText(node.textContent);
+      if (!text || text.length > 500) return false;
+      if (node.querySelector('h2, h3')) return false;
+      return PROMO_TEXT_PATTERNS.some(re => re.test(text));
+    });
+
+    promoCandidates.forEach(node => {
+      const card = node.closest('section, article, div');
+      if (card && card !== sidebar) {
+        card.remove();
+      }
+    });
   }
 
   function moveChordsToLeftSidebar() {
@@ -372,6 +430,7 @@
     if (!sidebar || sidebar.__ugChordsObserver) return;
 
     const observer = new MutationObserver(() => {
+      removePlayNextAndPromo(sidebar);
       moveChordsToLeftSidebar();
       hideSidebar(findRightSidebar());
       updateChordsFontSize(getSavedChordsFontSize());
@@ -398,9 +457,10 @@
     dismissPopups();
     moveLoginButtonsToNavbar();
     applyMainLayoutOverrides();
-    moveChordsToLeftSidebar();
 
     const rightSidebar = findRightSidebar();
+    removePlayNextAndPromo(rightSidebar);
+    moveChordsToLeftSidebar();
     hideSidebar(rightSidebar);
     attachSidebarObserver(rightSidebar);
 
