@@ -6,7 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/ultimate-guitar.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/ultimate-guitar.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      2.2.6
+// @version      2.2.7
 // @description  Optimize Ultimate Guitar layout: remove ads, move chords to left sidebar, expand main content
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @match        https://www.ultimate-guitar.com/tab/*
@@ -254,6 +254,11 @@
     const navbarHeight = Math.max(0, Math.ceil(findNavbar()?.getBoundingClientRect().height || 68));
     const top = navbarHeight + 8;
     const rect = leftContainer.getBoundingClientRect();
+    const sidebarBg = getComputedStyle(leftContainer).backgroundColor;
+    const bodyBg = getComputedStyle(document.body).backgroundColor;
+    const resolvedBg = (!sidebarBg || sidebarBg === 'rgba(0, 0, 0, 0)' || sidebarBg === 'transparent')
+      ? (bodyBg && bodyBg !== 'rgba(0, 0, 0, 0)' ? bodyBg : '#101010')
+      : sidebarBg;
 
     const width = Math.max(220, Math.floor(rect.width || leftContainer.offsetWidth || 260));
     const left = Math.max(8, Math.floor(rect.left));
@@ -269,7 +274,7 @@
     leftContainer.style.setProperty('position', 'fixed', 'important');
     leftContainer.style.setProperty('top', `${top}px`, 'important');
     leftContainer.style.setProperty('left', `${left}px`, 'important');
-    leftContainer.style.setProperty('z-index', '20', 'important');
+    leftContainer.style.setProperty('z-index', '200', 'important');
     leftContainer.style.setProperty('width', `${width}px`, 'important');
     leftContainer.style.setProperty('min-width', '0', 'important');
     leftContainer.style.setProperty('box-sizing', 'border-box', 'important');
@@ -277,6 +282,9 @@
     leftContainer.style.setProperty('overflow-y', 'auto', 'important');
     leftContainer.style.setProperty('overscroll-behavior', 'contain', 'important');
     leftContainer.style.setProperty('padding-right', '6px', 'important');
+    leftContainer.style.setProperty('background-color', resolvedBg, 'important');
+    leftContainer.style.setProperty('border-radius', '8px', 'important');
+    leftContainer.style.setProperty('box-shadow', '0 8px 24px rgba(0, 0, 0, 0.24)', 'important');
   }
 
   function makeLeftSidebarSticky(leftContainer) {
