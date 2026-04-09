@@ -6,7 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/ultimate-guitar.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/ultimate-guitar.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      2.2.8
+// @version      2.2.9
 // @description  Optimize Ultimate Guitar layout: remove ads, move chords to left sidebar, expand main content
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @match        https://www.ultimate-guitar.com/tab/*
@@ -435,10 +435,15 @@
     const tabRoot = getTabContentRoot();
     if (!tabRoot) return;
 
+    tabRoot.setAttribute('data-ug-tab-root', '1');
+
     if (!value) {
       tabRoot.style.removeProperty('font-family');
       const codeNode = tabRoot.querySelector('code');
       if (codeNode) codeNode.style.removeProperty('font-family');
+      tabRoot.querySelectorAll('code, code *, pre, pre *').forEach(node => {
+        node.style.removeProperty('font-family');
+      });
       return;
     }
 
@@ -447,6 +452,11 @@
     if (codeNode) {
       codeNode.style.setProperty('font-family', value, 'important');
     }
+
+    // UG sometimes applies font styles deep in descendants; apply recursively for reliability.
+    tabRoot.querySelectorAll('code, code *, pre, pre *').forEach(node => {
+      node.style.setProperty('font-family', value, 'important');
+    });
   }
 
   function getSavedChordsFontSize() {
@@ -463,6 +473,10 @@
     if (normalizeText(dialog.getAttribute('role')) !== 'dialog') return;
     if (!/font size/i.test(dialog.textContent || '')) return;
     if (dialog.querySelector('.ug-chords-fontsize-setting')) return;
+
+    dialog.style.setProperty('width', 'min(92vw, 960px)', 'important');
+    dialog.style.setProperty('max-width', '960px', 'important');
+    dialog.style.setProperty('min-width', '640px', 'important');
 
     const anchors = Array.from(dialog.querySelectorAll('div, section, article'));
     const fontSizeAnchor = anchors.find(el => /font size/i.test(normalizeText(el.textContent)) && el.querySelector('button, [role="spinbutton"]'));
@@ -564,6 +578,10 @@
         event.preventDefault();
         setSavedTabFontFamily(fontInput.value);
       }
+    });
+
+    fontInput.addEventListener('input', () => {
+      applyTabFontFamily(fontInput.value);
     });
 
     fontInputRow.appendChild(fontInputLabel);
