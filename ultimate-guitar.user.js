@@ -6,7 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LuckyLuuk12/UserScripts/main/ultimate-guitar.user.js
 // @source       https://github.com/LuckyLuuk12/UserScripts/blob/main/ultimate-guitar.user.js
 // @homepageURL  https://github.com/LuckyLuuk12/UserScripts
-// @version      2.2.2
+// @version      2.2.3
 // @description  Optimize Ultimate Guitar layout: remove ads, move chords to left sidebar, expand main content
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @match        https://www.ultimate-guitar.com/tab/*
@@ -237,6 +237,18 @@
     return { leftContainer, rightSidebar, chordsSection };
   }
 
+  function makeLeftSidebarSticky(leftContainer) {
+    if (!leftContainer) return;
+
+    leftContainer.style.setProperty('position', 'sticky', 'important');
+    leftContainer.style.setProperty('top', '76px', 'important');
+    leftContainer.style.setProperty('align-self', 'start', 'important');
+    leftContainer.style.setProperty('max-height', 'calc(100vh - 90px)', 'important');
+    leftContainer.style.setProperty('overflow-y', 'auto', 'important');
+    leftContainer.style.setProperty('overscroll-behavior', 'contain', 'important');
+    leftContainer.style.setProperty('padding-right', '6px', 'important');
+  }
+
   function findPanelByHeading(sidebar, headingText) {
     if (!sidebar) return null;
 
@@ -284,6 +296,7 @@
     if (!layout) return;
 
     const { leftContainer, chordsSection } = layout;
+    makeLeftSidebarSticky(leftContainer);
     if (leftContainer.contains(chordsSection)) return;
 
     leftContainer.insertBefore(chordsSection, leftContainer.firstChild);
@@ -499,12 +512,13 @@
 
     const main = findMain();
     const navbar = findNavbar();
-    if (!main || !navbar) {
+    const leftContainer = findMoreVersionsContainer();
+    const rightSidebar = findRightSidebar();
+    if (!main || !navbar || !leftContainer || !rightSidebar) {
       setTimeout(reorganizeLayout, 150);
       return;
     }
 
-    hasReorganized = true;
     console.log('[UG Script] Starting layout reorganization');
 
     removeAds();
@@ -512,7 +526,7 @@
     moveLoginButtonsToNavbar();
     applyMainLayoutOverrides();
 
-    const rightSidebar = findRightSidebar();
+    makeLeftSidebarSticky(leftContainer);
     removePlayNextAndPromo(rightSidebar);
     moveChordsToLeftSidebar();
     hideSidebar(rightSidebar);
@@ -523,7 +537,19 @@
     observeSettingsPopups();
     setupSettingsButtonListener();
 
+    hasReorganized = true;
+
     console.log('[UG Script] Layout reorganization complete');
+  }
+
+  function layoutNeedsReapply() {
+    const leftContainer = findMoreVersionsContainer();
+    const rightSidebar = findRightSidebar();
+    const chordsInLeft = !!(leftContainer && findChordsSection(leftContainer));
+
+    if (!leftContainer || !chordsInLeft) return true;
+    if (rightSidebar && rightSidebar.style.display !== 'none') return true;
+    return false;
   }
 
   // Run on page load
@@ -535,6 +561,18 @@
 
   // Auto-dismiss popups periodically
   setInterval(dismissPopups, 2000);
+
+  // Re-apply layout when UG re-renders widgets without URL changes.
+  setInterval(() => {
+    if (!hasReorganized) {
+      reorganizeLayout();
+      return;
+    }
+    if (layoutNeedsReapply()) {
+      hasReorganized = false;
+      reorganizeLayout();
+    }
+  }, 1200);
 
   // Watch for URL changes (SPA navigation)
   let lastUrl = location.href;
